@@ -1,0 +1,40 @@
+#!/bin/bash
+
+## Jacob Gutierrez, gutierja@ohsu.edu, 4/1/20 
+## The conda enviroment was previously made with:
+#conda env create -f environment.yml --prefix=/home/groups/hoolock2/u0/jg/thesis/env/methylseq
+
+## 4/11/20 I have found errors in enviroments so I am trying a new way to create it manually then export the enviroment
+# I want 1) python=3.6 2) pandas 3) bismark 4) 
+#conda create --prefix=/home/groups/hoolock2/u0/jg/thesis/env/methylseq python=3.6 pandas xlrd r-base bioconductor-rtracklayer r-tidyverse r-ggpubr trim-galore bismark multiqc bedtools
+
+## I forgot to add multiqc and bedtools! 
+
+## Edit prompt to show name ONLY DO ONCE
+#conda config --set env_prompt '({name}) '
+
+## Adding channels to conda ONLY DO ONCE
+#conda config --add channels defaults
+#conda config --add channels r ## To make rtracklayer dependencies work! (potentially 4/15/20)
+#conda config --add channels bioconda
+#conda config --add channels conda-forge
+#conda config --set channel_priority strict
+
+
+## Not sure what this did Supposedly puts environment on path?
+#conda config --append envs_dirs /home/groups/hoolock2/u0/jg/thesis/env/methylseq
+
+## This script activates the enviroment
+conda activate /home/groups/hoolock2/u0/jg/thesis/env/methylseq
+
+# Deactivate as normal 
+#conda deactivate
+
+
+## Update the enrvionment.yml file
+#conda env export --no-builds | grep -v "prefix" > environment.yml
+
+
+## To remove this environment
+##### BECAREFUL THIS DELETS THE env/ DIRECTORY!
+#conda env remove -p /home/groups/hoolock2/u0/jg/thesis/env/methylseq

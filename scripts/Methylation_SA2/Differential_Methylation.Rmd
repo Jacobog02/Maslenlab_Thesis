@@ -1,0 +1,589 @@
+---
+title: "Differential Methylation Analysis"
+author: "Jacob Gutierrez"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: hide
+    df_print: paged
+    toc: true
+    toc_float:
+      collapsed: true
+      smooth_scroll: false
+    theme: yeti
+subtitle: "Thesis Project: SA2"
+params: 
+  exp_name: "ECP15"
+  wrk_dir: "/home/groups/hoolock2/u0/jg/thesis/sa2/"
+---
+
+```{r knitr setup chunk, echo = F}
+## Knitr setupchunk
+knitr::opts_chunk$set(fig.width=12, fig.height=8, echo=TRUE, warning=FALSE, message=FALSE, rows.print=20, eval = TRUE)
+```
+
+# Purpose: {.tabset .tabset-fade .tabset-pills}
+
+> The purpose of this document is to perform the differential methylation analysis on the processed CpG data. All models will be adjusted for cell type compositon via Surrogate Variable Analysis
+
+## Render Report 
+
+THis section of code will be unified into a overview analysis script that Will 
+
+# Differential Methylation Analysis 
+
+#### Libraries
+
+
+```{r libraries}
+library(tidyverse) ## Dataframe operations
+library(methylKit) ## Methylation Sequencing tools
+library(limma) ## CpG Detection
+source('/home/groups/hoolock2/u0/jg/thesis/scripts/Methylation_SA2/mc_analysis_tools.R') # SVA code and PC-PR2 code
+source('/home/groups/hoolock2/u0/jg/thesis/bin/jg_functions.R') # Pretty html printing. 
+
+## Testing
+#stop(getwd())
+
+```
+
+
+### Data read in 
+
+```{r mapping read in}
+#exp_name ="ECP15"
+exp_name <- params$exp_name
+#c_mappings <- read.csv('ecp15_mapping.csv',stringsAsFactors = FALSE)
+c_mappings <- readxl::read_xlsx(path="/home/groups/hoolock2/u0/jg/thesis/mcseq_data/mc-seq_mapping_plus15.xlsx", sheet = exp_name)
+
+
+# Convering to characters as methykit is picky Done above
+c_mappings <-  c_mappings %>% mutate(complex = case_when( Karyotype == '45,X' ~ 0,
+                                                          Karyotype == 'N/A' ~ 0, 
+                                                          TRUE ~ 1))
+## Make factors
+c_mappings <- c_mappings %>% mutate(BAV = as.factor(BAV), Smoking = as.factor(Smoking), complex = as.factor(complex), Pool = as.factor(Pool))
+
+
+## Add text_bav 
+c_mappings <- c_mappings %>% mutate(bav_tav = as.factor(if_else(BAV == 1, "BAV","TAV")))
+
+c_mappings %>% jg_pretty_print()
+```
+
+
+
+
+```{r}
+meth <- readRDS(sprintf('%s/meth_data/final_cpg_obj.rds',params$wrk_dir))
+#dim(meth) #1610315 CpGs
+percMethylation(meth, rowids = TRUE) %>% as.data.frame %>% head() %>% jg_pretty_print(cap= "Final CpG Matrix")
+
+
+tiles <- readRDS(sprintf('%s/meth_data/final_tiled_obj.rds',params$wrk_dir))
+#dim(tiles) #363238 Tiles
+percMethylation(tiles, rowids = TRUE) %>% as.data.frame() %>% head() %>% jg_pretty_print(cap= "Tiled Matrix")
+
+
+imputed <- readRDS(sprintf('%s/meth_data/tiled_before_imputed_meth.rds',params$wrk_dir)) 
+imputed %>% as.data.frame() %>% head() %>% jg_pretty_print(cap= "Imputed CpG Matrix")
+
+```
+
+
+
+### Surrogate Variable Analysis (SVA)
+
+> All differential Methylation detection algorithms used will be adjusted for cell type composition by SVA. This will be done on the imputed matrix as this method requires a complete matrix. 
+
+> Additionally CpGs that do not vary across all samples must be removed as this causes the algorithm to fail. 
+
+
+```{r}
+variable_imputed <- remove_invariance(imputed)
+all_covariates <- c('bav_tav', 'Age','Smoking','complex','Pool')
+main_var <- 'bav_tav'
+biological <- c('Age')
+naive_title <- 'Value before imputation'
+```
+
+> It appears 8% of all CpGs are the same across all samples and were removed for cell type composition estimation. 
+
+> Now applying the Traditional SVA algorithm 
+
+> JG 8/19/20: Changing pipeline to compute the output once and save it (detect if the desired output is already made if not make it)
+
+```{r}
+## Estimating the Number of SVs by permutation 
+## Note: I already computed this so to save time I am setting it as 3 
+
+## Checking for files:
+prev_sva <- sprintf("%s/eda_data/sva_out.rds", params$wrk_dir)
+if (file.exists(prev_sva)){
+  ## THe file exists load it.
+  print("loading Previously Generated SVA Object!")
+  tile_sva <- readRDS(prev_sva)
+}else{
+  # It doesnt exist so run it 
+  ## JG ADD SAVING IT LATER!!!!!
+  print("No Output Detected Running SVA")
+  tile_sva <- sva_assessment(variable_imputed, c_mappings, all_covariates, main_var, biological, naive_title, discover = FALSE, algorithm = "Leek", sv_est_alg = 'be') #'be') #"RMT")
+  
+  ## Saving
+  saveRDS(tile_sva, prev_sva)
+}
+
+tile_sva$heatplot
+
+tile_sva$barplot
+
+SV <- tile_sva$sv
+colnames(SV) <-  paste("SV", seq(tile_sva$n.sv), sep ='')
+
+```
+
+
+> Excellent the disease phenotype of interest is not caputred in the Surrogates and thus all surrogates can be included in modeling using the table `SV`. 
+
+#### PC-PR2 Analysis of SVA
+
+```{r}
+
+updated_mat <- variable_imputed
+new_pca <- prcomp(t(updated_mat))
+pcpr2_obj <- new_pca
+
+
+sva_to_assess <- tile_sva
+new_pheno <- c_mappings[,all_covariates]
+new_pheno <- cbind(new_pheno, sva_to_assess$sv)
+
+sv_vect <- paste('SV',seq( sva_to_assess$n.sv), sep = '')
+colnames(new_pheno) <- c(all_covariates, sv_vect)
+
+biological <- all_covariates[1:2]
+
+bio_known_technical <- all_covariates
+
+bio_SV <- c(biological, sv_vect)
+
+everything <-colnames(new_pheno)
+
+to_paste <-  sva_to_assess$title
+a_title <- paste(to_paste, "Biological Factors Only", sep = '\n')
+PC_PR2(pcpr2_obj, new_pheno, biological,a_title,thrs= .8)
+
+a_title <- paste(to_paste, "Biological and KNOWN technical", sep = '\n')
+PC_PR2(pcpr2_obj, new_pheno, bio_known_technical,a_title,thrs= .8)
+
+
+a_title <- paste(to_paste, "Biological and Surrogate Variables", sep = '\n')
+PC_PR2(pcpr2_obj, new_pheno, bio_SV,a_title,thrs= .8)
+
+a_title <- paste(to_paste, "Surrogate Variables", sep = '\n')
+PC_PR2(pcpr2_obj, new_pheno, sv_vect,a_title,thrs= .8)
+
+a_title <- paste(to_paste, "All Known Factors", sep = '\n')
+PC_PR2(pcpr2_obj, new_pheno, everything,a_title,thrs= .8)
+```
+
+
+> Interesting, In this case SVA can only capture 57% of total variation when **only** biological covariates are included. This indicates that SVA could not fully capture the variation in this dataset. That said, when all biological, technical, and SVs are included 93% of the variation is explained. Thus the SVs capture a signficiatn amount of variation most likely assocaited with cell type composition. 
+
+<!-- ## Creating Output Directory -->
+
+<!-- ```{bash} -->
+<!-- mkdir -p dmr_data -->
+<!-- ``` -->
+
+
+# DMP detection (Limma)
+
+> The final CpG matrix will be used to detect DMPs using Limma. In total 3 models will be fit.
+
+### Data Prep
+
+
+```{r}
+raw <- percMethylation(meth, rowids = TRUE)
+
+Group=c_mappings$bav_tav %>% factor
+# set the age as numeric
+Age=as.numeric(c_mappings$Age)
+
+# take the arcsin sqrt transform of the meth.percent data
+vwts <- asin(sqrt(raw/100))
+
+```
+
+### Null Model
+
+
+```{r}
+# set model design
+design <- model.matrix(~ 0 + Group )
+
+# fit the linear model
+fit <- lmFit(vwts, design=design)
+
+# define contrast matrix
+cont.matrix <- makeContrasts(
+  Case_v_Ctrl=GroupBAV-GroupTAV,
+  levels=design
+)
+
+fit2 <- contrasts.fit(fit, cont.matrix)
+fit2 <- eBayes(fit2)
+summary(decideTests(fit2, p.value = .1))
+```
+
+> There are detectable CpG methylation differences in this dataset. 
+
+
+### Age Adjusted Model
+
+
+```{r}
+# set model design
+design <- model.matrix(~ 0 + Group + Age)
+
+# fit the linear model
+fit <- lmFit(vwts, design=design)
+
+# define contrast matrix
+cont.matrix <- makeContrasts(
+  Case_v_Ctrl=GroupBAV-GroupTAV,
+  levels=design
+)
+
+fit2 <- contrasts.fit(fit, cont.matrix)
+fit2 <- eBayes(fit2)
+summary(decideTests(fit2, p.value = .1))
+```
+
+
+> Adjusting for age reduces the number of significant CpGs understandably. 
+
+### Age + SV Adjusted Model
+
+```{r}
+# set model design
+design <- model.matrix(~ 0 + Group + Age + SV)
+
+# take the arcsin transform of the meth.percent data
+#vwts <- asin(sqrt(raw/100))
+
+# fit the linear model
+fit <- lmFit(vwts, design=design)
+
+# define contrast matrix
+cont.matrix <- makeContrasts(
+  Case_v_Ctrl=GroupBAV-GroupTAV,
+  levels=design
+)
+
+fit2 <- contrasts.fit(fit, cont.matrix)
+fit2 <- eBayes(fit2)
+summary(decideTests(fit2,  p.value = .1))
+```
+
+> 32 Positions have a p value beneath the threshold. 
+
+### Save DMP results
+
+#### Processing All Age + SV Adjusted DMPs and Saving 
+
+
+```{r}
+
+outs=data.frame(
+  CpG_ID=row.names(fit2),
+  log2FC=data.frame(fit2)$coefficients,
+  pvalue=data.frame(fit2)$p.value,
+  FDRp=p.adjust(data.frame(fit2)$p.value,"BH"),
+  stringsAsFactors = FALSE
+)
+
+#write.table(outs, "data/dmp.results.txt", row.names=FALSE, col.names=TRUE, sep="\t", quote=FALSE)
+
+## Now append raw data
+# Add stats to the raw data.
+next_out <- cbind(outs,raw)
+
+# Calculate group means!
+case_mean <- (raw[,c_mappings %>% filter(bav_tav == "BAV") %>% pull(Group_ID)]) %>% rowMeans(., na.rm = TRUE) 
+ctrl_mean <- (raw[,c_mappings %>% filter(bav_tav == "TAV") %>% pull(Group_ID)]) %>% rowMeans(., na.rm = TRUE) 
+
+meth_diff <- ctrl_mean - case_mean
+
+
+# Append group means 
+next_out <- cbind(next_out, case_mean, ctrl_mean, meth_diff)
+
+#write.table(next_out, "data/full_dmp_results.txt", row.names=FALSE, col.names=TRUE, sep="\t", quote=FALSE)
+
+
+
+## Convert to BED format. 
+#next_bed <- next_out %>% dplyr::select(CpG_ID, FDRp) %>% separate(CpG_ID, c("chr","start","stop"), sep = "\\.") %>% mutate(chr= sprintf("chr%s", chr))
+
+#write.table(next_bed, "data/full_dmp_results.bed", row.names=FALSE, col.names=TRUE, sep="\t", quote=FALSE)
+```
+
+
+####  Saving Signficant DMPs
+
+> Now Extracting Signficant sites 
+
+  1) FDRp < .05 NOT .1   
+  2) abs(meth_diff) >= 10
+
+```{r}
+
+next_out <- next_out %>% filter(FDRp <= .05)
+next_out %>% arrange(FDRp) %>% dplyr::select(CpG_ID, FDRp, meth_diff) %>% jg_pretty_print()
+
+next_out <- next_out %>% filter(abs(meth_diff) >= 10)
+next_out %>% arrange(FDRp) %>% dplyr::select(CpG_ID, FDRp, meth_diff) %>% jg_pretty_print()
+
+## Save for plotting
+n_cpg_sig <- nrow(next_out)
+
+
+write.table(next_out, sprintf("%s/dmr_data/sig_methdiff_dmp_results.txt",params$wrk_dir), row.names=FALSE, col.names=TRUE, sep="\t", quote=FALSE)
+
+## Convert to BED format. 
+next_bed <- next_out %>% dplyr::select(CpG_ID) %>% separate(CpG_ID, c("chr","start","stop"), sep = "\\.") %>% mutate(CpG_ID = next_out$CpG_ID)  #%>% mutate(chr= sprintf("chr%s", chr)) %>% mutate(CpG_ID = next_out$CpG_ID)
+
+write.table(next_bed, sprintf("%s/dmr_data/sig_methdiff_dmp_results.bed",params$wrk_dir), row.names=FALSE, col.names=FALSE, sep="\t", quote=FALSE)
+```
+
+# DMR detection (MethylKit F-test OC)
+
+> The final CpG matrix will be used to detect DMPs using Limma. In total 3 models will be fit 
+
+### Data Prep
+
+> The Tile object can be passed into the `methylkit::calculateDiffMeth()` function 
+
+
+### Null Model
+
+```{r}
+# F with Overdispersion correction 
+DMR_null.diffMeth<-calculateDiffMeth(tiles,test = "F", overdispersion = "MN", adjust = "BH" ,mc.cores=24)
+
+assess_diffmethobj(DMR_null.diffMeth, dim(tiles)[1])
+```
+
+> Only 55 Tiles show significant differences in methylation under a null model. 
+
+
+### Age Adjusted Model
+
+```{r}
+#all_cov <- c("Age")
+covariate_df <- c_mappings[,"Age"] %>% data.frame("Age" = .)
+
+# F with Overdispersion correction 
+DMR_age.diffMeth<-calculateDiffMeth(tiles,covariates = covariate_df ,test = "F", overdispersion = "MN", adjust = "BH" ,mc.cores=24)
+
+assess_diffmethobj(DMR_age.diffMeth, dim(tiles)[1])
+```
+
+> Including age adjustment there are now 125 tiles of significance. 
+
+### Age + SV Adjusted Model
+
+```{r}
+covariate_df <- c_mappings[,"Age"]
+covariate_df <- cbind(covariate_df,SV)
+
+# Chisq with Overdispersion correction 
+DMR_sva.diffMeth<-calculateDiffMeth(tiles,covariates = covariate_df, test = "F", overdispersion = "MN", adjust = "BH", mc.cores=24)
+
+assess_diffmethobj(DMR_sva.diffMeth, dim(tiles)[1])
+```
+
+> SVA allows for the adjustment of cell type composition allowing the logistic regression model to better detect significant differences in methylation.
+
+### Saving DMRs
+
+#### Processing All Age + SV Adjusted DMRs and Saving 
+
+
+```{r}
+diff_out <- DMR_sva.diffMeth %>% data.frame() ## In bed format currently. 
+tile_meth <- percMethylation(tiles, rowids = TRUE) ## Get methylation values.
+
+## I want the same output as limma Region_id, pvalue, qvalue, all_methylated, case_mean, ctrl_mean, meth.diff
+out <- data.frame(region_id = rownames(tile_meth), pvalue = diff_out$pvalue, FDRp = diff_out$qvalue, adj_diff_meth = diff_out$meth.diff)
+
+##JG 8/22/20: Modifying region_id to be /. based. 
+out <- out %>% mutate(region_id = gsub("\\.","_",region_id))
+
+## Calculating differences. 
+# Calculate group means!
+case_mean <- (tile_meth[,c_mappings %>% filter(bav_tav == "BAV") %>% pull(Group_ID)]) %>% rowMeans(., na.rm = TRUE) 
+ctrl_mean <- (tile_meth[,c_mappings %>% filter(bav_tav == "TAV") %>% pull(Group_ID)]) %>% rowMeans(., na.rm = TRUE) 
+
+meth_diff <- case_mean - ctrl_mean
+
+out <- cbind(out, tile_meth, case_mean, ctrl_mean, meth_diff)
+
+
+write.table(out, sprintf("%s/dmr_data/full_DMR_results.txt",params$wrk_dir), row.names=FALSE, col.names=TRUE, sep="\t", quote=FALSE)
+
+
+## BED format with only FDRp 
+next_bed <- diff_out %>% dplyr::select(1:3)  %>% #mutate(chr= sprintf("chr%s", chr)) 
+  tidyr::unite("regionid", chr:end,remove = FALSE) %>% dplyr::select(2,3,4, 1)
+
+write.table(next_bed, sprintf("%s/dmr_data/full_DMR_results.bed",params$wrk_dir), row.names=FALSE, col.names=TRUE, sep="\t", quote=FALSE)
+```
+
+
+
+#### Saving Signficant DMRs
+
+> Now Extracting Signficant Tiles   
+
+  1) FDRp < .05 NOT.1 
+  2) meth_diff >= 10
+
+Note: There are adjusted methylation differences and the raw methylation differences. For this analysis I will use the adjusted methylation differences as they tend to be more conservative. 
+
+
+```{r}
+next_out <- out %>% filter(FDRp <= .05)
+next_out %>% arrange(FDRp) %>% dplyr::select(region_id, FDRp, adj_diff_meth) %>% jg_pretty_print()
+
+next_out <- next_out %>% filter(abs(adj_diff_meth) >= 10)
+next_out %>% arrange(FDRp) %>% dplyr::select(region_id, FDRp, adj_diff_meth) %>% jg_pretty_print()
+n_tile_sig <- nrow(next_out)
+
+write.table(next_out, sprintf("%s/dmr_data/sig_methdiff_DMR_results.txt",params$wrk_dir), row.names=FALSE, col.names=TRUE, sep="\t", quote=FALSE)
+
+## Convert to BED format. 
+#next_bed <- next_out %>% dplyr::select(region_id) %>% separate(region_id, c("chr","start","stop"), sep = "\\.")  %>%
+## JG 8/23/20 UNITE SEP TO MATCH.
+next_bed <- next_out %>% dplyr::select(region_id) %>% separate(region_id, c("chr","start","stop"), sep = "_")  %>%
+  tidyr::unite("regionid", chr:stop,remove = FALSE) %>% dplyr::select(2,3,4, 1)
+
+write.table(next_bed, sprintf("%s/dmr_data/sig_methdiff_DMR_results.bed",params$wrk_dir), row.names=FALSE, col.names=FALSE, sep="\t", quote=FALSE)
+
+```
+
+
+#### MethDiff Object save
+
+I will save the methdiff object in order to fully use the methylkit convience functions
+
+```{r}
+saveRDS(DMR_sva.diffMeth, sprintf('%s/dmr_data/DMR_methdiff.rds', params$wrk_dir))
+```
+
+
+
+## DMR Annotation
+
+First Find the genes nearest to each DMR. 
+
+<!-- Please note that the updated_bedclosest.sh script has a manually set annotation path & file names. Consider making this a parameter.  -->
+
+
+```{bash bed closest, eval = F}
+## Run bed_clostest.sh 
+closest=/home/groups/hoolock2/u0/jg/thesis/scripts/Methylation_SA2/updated_bedclosest.sh
+here=/home/groups/hoolock2/u0/jg/thesis/sa2/dmr_data/sig_methdiff_DMR_results.bed
+
+bash $closest $here
+```
+
+Next I run Genomation. 
+
+
+Trying to call it form R instead
+
+```{r, eval = F}
+genomation="/home/groups/hoolock2/u0/jg/thesis/scripts/Methylation_SA2/updated_run_genomation.sh"
+script_dir="/home/groups/hoolock2/u0/jg/thesis/scripts/Methylation_SA2"
+wd = "/home/groups/hoolock2/u0/jg/thesis/sa2/dmr_data"
+
+
+#bed="/home/groups/hoolock2/u0/jg/thesis/sa2/dmr_data/srt.sig_methdiff_DMR_results.bed"
+opt$infile="/home/groups/hoolock2/u0/jg/thesis/sa2/dmr_data/sig_methdiff_DMR_results.bed"
+opt$dmr="/home/groups/hoolock2/u0/jg/thesis/sa2/dmr_data/sig_methdiff_DMR_results.txt"
+ann_dir="/home/groups/hoolock2/u0/jg/thesis/hg38_annotation_data"
+opt$annoBED=sprintf("%s/ensembl_GRCh38.98_ann.bed",ann_dir)
+
+
+opt$t2g=sprintf("%s/ensembl_biomart_t2g.tsv",ann_dir)
+#t2g_name=ensembl_biomart_t2g.tsv
+
+
+#biomart_name=ensembl_biomart_annotations.tsv
+opt$mart=sprintf("%s/ensembl_biomart_annotations.tsv",ann_dir)
+
+opt$bcog=sprintf("%s/bedtools.closest.gene.output",wd)
+opt$bcop=sprintf("%s/bedtools.closest.promoters.output",wd)
+
+opt$name="TS_BAV_DMR"
+
+## RUN opt=parseOption to do this analysis manually
+#source(sprintf("%s/xlsx_genomation.R",script_dir))
+
+```
+
+
+Check 
+
+```{bash annotate dmrs}
+
+## Run this on terminal... This gets confusing.
+#geno=/home/groups/hoolock2/u0/jg/thesis/scripts/Methylation_SA2/updated_run_genomation.sh
+geno=/home/groups/hoolock2/u0/jg/thesis/scripts/Methylation_SA2/JG_run_genomation.sh
+bed=/home/groups/hoolock2/u0/jg/thesis/sa2/dmr_data/sig_methdiff_DMR_results.bed
+dmr=/home/groups/hoolock2/u0/jg/thesis/sa2/dmr_data/sig_methdiff_DMR_results.txt
+
+
+
+bash  $geno $bed $dmr
+
+```
+
+
+
+
+now converting the results to an excel file. 
+
+```{bash, eval=F}
+## Run this on terminal... This gets confusing. 
+runafter=/home/groups/hoolock2/u0/jg/thesis/scripts/Methylation_SA2/after_run_annot.R
+annotation=/home/groups/hoolock2/u0/jg/thesis/sa2/dmr_data/srt.sig_methdiff_DMR_results.bed
+dmrs=/home/groups/hoolock2/u0/jg/thesis/sa2/dmr_data/srt.sig_methdiff_DMR_results.bed
+out_name=TS_BAV_DMR_FINAL
+
+Rscript  $runafter -i $annotation --dmr=$dmrs --name=$out_name
+```
+
+
+
+
+# Conclusion:
+
+
+DMPS: There are **`r n_cpg_sig`** high confidence CpGs that show differential methylation
+
+
+DMRs: There are **`r n_tile_sig`** significant DMRs detected 
+
+
+
+
+### Packages
+
+```{r R info}
+sessionInfo()
+```
+

@@ -1,0 +1,389 @@
+---
+title: "`r params$exp_name` Methylation QC Report"
+author: "Jacob Gutierrez"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: hide
+    df_print: paged
+    toc: true
+    toc_float:
+      collapsed: true
+      smooth_scroll: false
+    theme: yeti
+subtitle: "Thesis Project"
+params:
+  exp_name: NA
+  excel_path: NA
+  wd: NA
+---
+
+```{r knitr setup, echo = F}
+## Knitr setupchunk
+knitr::opts_chunk$set(fig.width=8, fig.height=6, echo=TRUE, warning=FALSE, message=FALSE, rows.print=20, eval = TRUE)
+```
+
+# Purpose: {.tabset .tabset-fade .tabset-pills}
+
+This script is expected to run on Hoolock2 See sessionInfo for more info.
+
+
+# Analysis:
+
+<!-- ## Report Render -->
+
+<!-- Here is code to render this report  -->
+<!-- Create QC report director to store output.  -->
+
+<!-- ```{bash make report directory, eval = F} -->
+<!-- mkdir -p meth_qc -->
+<!-- ``` -->
+
+
+<!-- ```{R Render Report , eval = F} -->
+<!-- outfile <- sprintf("meth_qc/%s_Methylation_QC", "ECP15") -->
+<!-- rmarkdown::render("meth_sample_qc_template.Rmd", output_file = outfile) -->
+
+<!-- ``` -->
+
+
+
+#### Libraries
+
+
+```{r libraries}
+library(rtracklayer)
+library(methylKit)
+library(dplyr)
+#source("../bin/jg_functions.R")
+```
+
+
+# Data Location
+
+
+Here I am interested in generating simple QC reports from the samples cpg coverage reports. 
+These reports are easily made using methylKit. 
+
+```{r mapping file readin}
+#exp_name ="ECP15"
+exp_name = params$exp_name
+
+#c_mappings <- read.csv('ecp15_mapping.csv',stringsAsFactors = FALSE)
+#excel_path="/home/groups/hoolock2/u0/jg/thesis/mcseq_data/mc-seq_mapping_plus15.xlsx"
+excel_path = params$excel_path
+
+## Adding working directory for writing out
+wd = params$wd
+
+## Adding Manual Path setting for Debugging 10/13/20 
+#exp_name ="B1_ECP42"
+
+#excel_path="/home/groups/hoolock2/u0/jg/thesis/mcseq_data/mc-seq_mapping_plusECP42.xlsx"
+
+
+c_mappings <- readxl::read_xlsx(path=excel_path, sheet = exp_name)
+
+
+## Add checks here
+
+#meth_path = "/home/groups/hoolock2/u0/jg/thesis/mcseq_data"
+#meth_path = paste(meth_path, exp_name, sep = "/")
+meth_path = sprintf("/home/groups/hoolock2/u0/jg/thesis/mcseq_data/%s/meth/", exp_name)
+
+#c_reports <- list.files("../cpg_reports",'CpG_report.txt.gz$')
+#c_reports <- list.files("../cov_reports/",'.cov.gz$')
+c_reports <- list.files(meth_path,'.cov.gz$')
+
+
+## For each file create a pdf one by one. This could be parallelized in the future. 
+#file_names <- paste(samples$Sample_Name, "_pe.bismark.cov.gz", sep = '')
+#file_list <- as.list(paste(meth_path,file_names,sep="") )
+
+#c_parse <- stringr::str_split_fixed(c_reports,'\\.',n = 5) 
+
+#idx <- match(c_mappings$fastq.file.number, c_parse[,1])
+
+c_mappings$file_name <- c_reports #paste(c_reports, "_pe.bismark.cov.gz", sep = '')
+
+
+# Convering to characters as methykit is picky Done above
+#c_mappings <-  dplyr::mutate(c_mappings, complex = dplyr::case_when( Karyotype == '45,X' ~ 0,
+                                                          #Karyotype == 'N/A' ~ 0, 
+                                                         # TRUE ~ 1))
+
+#c_mappings <- dplyr::mutate(c_mappings, BAV = as.factor(BAV), Smoking = as.factor(Smoking), complex = as.factor(complex), library_pool = as.factor(Pool))
+
+c_mappings
+```
+
+
+Now reading in all files.
+
+```{r methylation read in}
+file_list <- as.list(paste(meth_path,c_mappings$file_name,sep="") )
+#mcseq_samples <- methRead(file_list, sample.id = as.list(c_mappings$Group_ID), pipeline = "bismarkCoverage", assembly = "hg38", treatment = c_mappings$BAV, context = "CpG", mincov = 10)
+mcseq_samples <- methRead(file_list, sample.id = as.list(c_mappings$Group_ID), pipeline = "bismarkCoverage", assembly = "hg38", treatment = c_mappings$BAV, context = "CpG", mincov = 10)
+```
+
+
+# QC Plots
+
+```{r plot_loop_chunk, results='asis', tidy=FALSE}
+
+for(i in seq(length(mcseq_samples))){
+    #cat("#", "Header", i, "\n")
+  cat(sprintf("## %s\n", mcseq_samples[[i]]@sample.id))
+
+    #print(<some loop-dependent plot>)
+  ## Start making or output here! Use cat to make space. 
+  
+  #### 1: Methylation histogram
+  cat(sprintf("### Methylation Histogram"))
+    getMethylationStats(mcseq_samples[[i]], plot = TRUE, both.strands = FALSE)
+    cat("\n")
+    #### 2: Coverage Stats
+  cat(sprintf("### Coverage Histogram"))
+    getCoverageStats(mcseq_samples[[i]], plot = TRUE, both.strands = FALSE)
+    
+    #### 3: coverage split by mcseq manifest
+    
+    
+    cat("\n")
+    cat("\n")
+}
+```
+
+
+<!-- > Methylation Histogram -->
+
+<!-- ```{r} -->
+<!-- #getMethylationStats(mcseq_samples[[1]], plot = TRUE, both.strands = FALSE) -->
+<!-- ``` -->
+
+# CpG Preprocessing Pipeline
+
+
+#### 10X coverage and median normalization
+
+
+```{r filter and join}
+# Filter for 10X coverage. Note: Do not remove PCR duplications in targeted sequencing
+prelim.filtered=filterByCoverage(mcseq_samples,lo.count=10,lo.perc=NULL,hi.count=NULL)
+
+# Normalize by Coverage
+prelim.filtered=normalizeCoverage(prelim.filtered)
+
+### Unite all methylation lists with at least one coverage.
+meth=methylKit::unite(prelim.filtered, destrand=F, min.per.group=1L, mc.cores=24)
+
+cleaned_meth <- meth
+```
+
+#### Group Majority Coverage and Canonical subsetting
+
+```{r group majority coverage, eval = F}
+## Extrating methylation in order to compute group majoirty.
+meth_mat <- percMethylation(meth, rowids = TRUE)
+dim(meth_mat)
+all_positions <- rownames(meth_mat)
+
+## I am counting NAs
+case_nas <- meth_mat[, c_mappings %>% filter(BAV == 1) %>% pull(Group_ID)] %>% is.na() %>% rowSums()
+
+## I am counting NAS
+case_maj <- ((c_mappings %>% filter(BAV == 1) %>% pull(Group_ID) %>% length()) /2) %>% ceiling()
+to_keep <- all_positions %in% names(case_nas)[case_nas < case_maj] 
+
+new_meth <- meth_mat[to_keep, ]
+dim(new_meth)
+
+#### Repeat again for controls ####
+## I am counting NAs
+ctrl_nas <- new_meth[, c_mappings %>% filter(BAV == 0) %>% pull(Group_ID)] %>% is.na() %>% rowSums()
+new_positions <- rownames(new_meth)
+
+## I am counting NAS
+ctrl_maj <- ((c_mappings %>% filter(BAV == 0) %>% pull(Group_ID) %>% length()) /2) %>% ceiling()
+to_keep <- new_positions %in% names(ctrl_nas)[ctrl_nas < ctrl_maj] 
+
+new_meth <- new_meth[to_keep, ]
+dim(new_meth)
+
+eligible_cpgs <- all_positions %in% rownames(new_meth)
+
+## Subset methylation object
+cleaned_meth <- meth[eligible_cpgs, ]
+dim(cleaned_meth)
+```
+
+```{r}
+### SUbset based on canonical 
+canonical <- c(seq(22), "X","Y")
+canonical_pos <- cleaned_meth$chr %in% canonical
+
+## Subset methylbase object
+cleaned_meth <- cleaned_meth[canonical_pos, ]
+dim(cleaned_meth) # 1610315 CpGs
+
+
+tiles <- tileMethylCounts(cleaned_meth,win.size=1000,step.size=1000,mc.cores=24)
+dim(tiles)
+```
+
+> There `1610315` CpGs in this finalized matrix. 
+
+
+#### Write out cleaned data
+<!-- ```{bash data directory} -->
+<!-- mkdir -p data -->
+<!-- ``` -->
+
+
+
+```{r save clean data}
+## Save CpG
+outf <- sprintf('%s/meth_data/final_cpg_obj.rds', wd)
+saveRDS(cleaned_meth, outf)
+## Save Tiles
+outf <- sprintf('%s/meth_data/final_tiled_obj.rds', wd)
+saveRDS(tiles, outf)
+```
+
+
+
+### Tiles + Value Before Imputation:
+
+
+> This imputation approach attempts to perserve within-sample variability across the dataset. First genomic tiles are generated and any missing CpG values are replaced by the tile mean. In some cases the missing CpGs span across entire tiles and thus a value before imputation approach is used to fill the matrix. Value before imputation essentially extends CpG methylation regions across multiple regions. 
+
+```{r imputation}
+raw <- percMethylation(cleaned_meth, rowids = TRUE)
+raw %>% head()
+til_meth <- percMethylation(tiles,rowids = TRUE)
+chr_df <- rownames(til_meth) %>% stringr::str_split_fixed(.,'\\.',n=3) %>% as.data.frame() %>% mutate_all(as.character)
+colnames(chr_df) <- c('chr','start','end')
+rownames(chr_df) <- rownames(til_meth)
+
+final <- cbind(chr_df,til_meth)
+
+fil_grange <- makeGRangesFromDataFrame(final, keep.extra.columns = TRUE)
+
+
+## Now I need to query the raw data for a single row and extract the methylation value. 
+imputed <- raw 
+buffer <- is.na(imputed)
+dims <- dim(imputed) #dims[1 ] = row , dims [2] = Col
+imp_rows <- rownames(imputed) %>% stringr::str_split_fixed(.,'\\.',n=3) %>% as.data.frame() %>% mutate_all(as.character)
+colnames(imp_rows) <- c('chr','start','end')
+imp_grange <- makeGRangesFromDataFrame(imp_rows)
+
+
+
+hits <-  findOverlaps(imp_grange, fil_grange, select = "arbitrary")
+#tile_idx <- subjectHits(hits)
+
+til_dat <- mcols(fil_grange)[hits,] %>% as.matrix()
+
+
+
+sum(is.na(imputed))
+
+## Replace NA's with Tile Value. 
+for (i in seq(dims[1])){
+  # Get one row of data
+  #print(i)
+  a_row <- imputed[i,]
+  to_add <- is.na(a_row)
+  
+  if(any(to_add)){
+    imp_dat <- til_dat[i,]
+    a_row[to_add] <- imp_dat[to_add]
+    imputed[i,] <- a_row
+    #print("IMPUTED!")
+  }
+  
+}
+
+sum(is.na(imputed))
+
+
+
+## Now Replace NA's with value before. 
+
+## Seed the first row with the mean methylation value. 
+first <- imputed[1,]
+to_check <- is.na(first)
+if(any(to_check)){
+    imputed[1,to_check] <- mean(first, na.rm=T)
+    #print("IMPUTED!")
+  }
+
+
+#Go down each row! I copied this code from above. 
+for (n in seq(2, dims[1])){
+  # Grab row
+  a_row <- imputed[n,]
+  to_add <- is.na(a_row)
+  
+  if(any(to_add)){
+    # Get value before
+    row_above <- imputed[n-1,]
+    # Add the imputation
+    imputed[n,to_add] = row_above[to_add]
+  }
+  
+  
+}
+
+sum(is.na(imputed)) #0
+
+imputed %>% head()
+tile_before_imputation <- imputed
+
+outf <- sprintf('%s/meth_data/tiled_before_imputed_meth.rds', wd)
+
+saveRDS(tile_before_imputation, outf)
+```
+
+> Originally **1889508** missing values were present, the tiled imputation imputed **1457626** values. Lastly Value before imptuation replaced the remaining **431882** values. 
+
+
+## Final Matrixes Assessment:
+
+
+```{r test load, eval = TRUE}
+outf <- sprintf('%s/meth_data/final_cpg_obj.rds', wd)
+meth <- readRDS(outf)
+#dim(meth) #1610315 CpGs
+percMethylation(meth, rowids = TRUE) %>% as.data.frame %>% head() #%>% jg_pretty_print(cap= "Final CpG Matrix")
+
+outf <- sprintf('%s/meth_data/final_tiled_obj.rds', wd)
+
+tiles <- readRDS(outf)
+#dim(tiles) #363238 Tiles
+percMethylation(tiles, rowids = TRUE) %>% as.data.frame() %>% head() #%>% jg_pretty_print(cap= "Tiled Matrix")
+
+outf <- sprintf('%s/meth_data/tiled_before_imputed_meth.rds', wd)
+
+imputed <- readRDS(outf) 
+imputed %>% as.data.frame() %>% head() #%>% jg_pretty_print(cap= "Imputed CpG Matrix")
+
+```
+
+> There are `r dim(meth)[1]` CpGs to be assessed in differential methylation detection
+
+> There are `r dim(tiles)[1]` tiles to be assed in differential methylation detection
+
+> In total there were 1889508 individual positions imputed. 
+
+
+
+
+
+### Packages
+
+```{r R info}
+sessionInfo()
+```
+

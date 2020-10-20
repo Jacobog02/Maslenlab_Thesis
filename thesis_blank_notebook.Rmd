@@ -1,0 +1,49 @@
+---
+title: "BLANK"
+author: "Jacob Gutierrez"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: hide
+    df_print: paged
+    toc: true
+    toc_float:
+      collapsed: true
+      smooth_scroll: false
+    theme: yeti
+subtitle: "Thesis Project: SA1"
+---
+
+```{r knitr setup chunk, echo = F}
+## Knitr setupchunk
+knitr::opts_chunk$set(fig.width=12, fig.height=8, echo=TRUE, warning=FALSE, message=FALSE, rows.print=20, eval = TRUE)
+```
+
+# Purpose: {.tabset .tabset-fade .tabset-pills}
+
+This script is expected to run on Hoolock2 See sessionInfo for more info.
+
+
+# Analysis:
+
+#### Libraries
+
+
+```{r libraries}
+library(rtracklayer)
+library(genomation)
+```
+
+
+### Data read in 
+
+
+
+
+
+### Packages
+
+```{r R info}
+sessionInfo()
+```
+

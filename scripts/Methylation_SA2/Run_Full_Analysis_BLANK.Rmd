@@ -1,0 +1,128 @@
+---
+title: "BLANK"
+author: "Jacob Gutierrez"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: hide
+    df_print: paged
+    toc: true
+    toc_float:
+      collapsed: true
+      smooth_scroll: false
+    theme: yeti
+subtitle: "Thesis Project: SA1"
+---
+
+```{r knitr setup chunk, echo = F}
+## Knitr setupchunk
+knitr::opts_chunk$set(fig.width=12, fig.height=8, echo=TRUE, warning=FALSE, message=FALSE, rows.print=20, eval = TRUE)
+```
+
+# Purpose: {.tabset .tabset-fade .tabset-pills}
+
+This script is expected to run on Hoolock2 See sessionInfo for more info.
+
+Report will render reports and execute code related to the Analysis from **Raw** Bismark Coverage reports to EDA plots and DMR annotation info. I can also add the results of the analysis in this summary report. 
+
+
+
+
+# Run Analysis:
+
+## Methylation QC
+
+```{bash make report directory, eval = F}
+mkdir -p meth_qc
+```
+
+
+```{R Render Report , eval = F}
+outfile <- sprintf("meth_qc/%s_Methylation_QC", "ECP15")
+rmarkdown::render("meth_sample_qc_template.Rmd", output_file = outfile)
+```
+
+
+### Results: 
+
+Not sure what Figures or Dataframes to export....
+
+* Number of CpGs to learn on.
+* Number of Tiles to learn on
+* Number of Methylation Values Imputed
+
+
+## EDA Report
+
+
+
+Analyses done: 
+1) Clustering 
+2)PCA
+3) PC-PR2
+4) SVA
+5) UMAP
+6) T-SNE
+
+### Results
+
+If you would like to see all results please explore the html report.
+Place EDA highlights here...
+
+* SVA summary
+* Best of plots. 
+
+Not sure what Figures or Dataframes to export....
+
+## Differential Methylation & DMR Annotation
+
+Rendering Diff Meth Report
+
+Rendering Annotation Report
+
+### Results
+
+
+* Number of Significant CpG
+* Number of Significant Tiles
+
+Not sure what Figures or Dataframes to export....
+
+
+# Biological Inference
+
+Code to do Downstream Analysis Here
+
+## Enrichment Analysis
+
+Render Report Here
+```{r}
+
+```
+
+
+Highlight Results here
+
+## String Database
+
+
+## GREAT Analysis
+
+## TF Motif Enrichment
+
+
+Run Homer Script Here
+
+
+# Full Results Summary
+
+Complete Results Highlights.
+
+
+
+### Packages
+
+```{r R info}
+sessionInfo()
+```
+

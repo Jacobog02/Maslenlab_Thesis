@@ -1,0 +1,390 @@
+---
+title: "Exploratory Data Analysis"
+author: "Jacob Gutierrez"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: hide
+    df_print: paged
+    toc: true
+    toc_float:
+      collapsed: true
+      smooth_scroll: false
+    theme: yeti
+subtitle: "Thesis Project: SA2"
+---
+
+```{r knitr setup chunk, echo = F}
+## Knitr setupchunk
+knitr::opts_chunk$set(fig.width=12, fig.height=8, echo=TRUE, warning=FALSE, message=FALSE, rows.print=20, eval = TRUE)
+```
+
+# Purpose: {.tabset .tabset-fade .tabset-pills}
+
+This script is expected to run on Hoolock2 See sessionInfo for more info.
+
+
+# Analysis:
+
+#### Libraries
+
+
+```{r libraries}
+library(tidyverse) ## Dataframe operations
+library(methylKit) ## Methylation Sequencing tools
+library(fastcluster) ## fast HC
+library(uwot) ## UMAP
+source("/home/groups/hoolock2/u0/jg/bin/FIt-SNE/fast_tsne.R") # fiT-SNE fftRtsne 
+library(vizier) ## visualize embedings ## Use devtools ot install may replace with custom.
+library(plot3D)
+source('../scripts/Methylation_SA2/mc_analysis_tools.R')  # SVA code and PC-PR2 code and PCA code
+source('../bin/jg_functions.R') # Pretty html printing. 
+```
+
+
+### Data read in 
+
+```{r mapping file readin}
+exp_name ="ECP15"
+
+#c_mappings <- read.csv('ecp15_mapping.csv',stringsAsFactors = FALSE)
+c_mappings <- readxl::read_xlsx(path="/home/groups/hoolock2/u0/jg/thesis/mcseq_data/mc-seq_mapping_plus15.xlsx", sheet = exp_name)
+
+
+# Convering to characters as methykit is picky Done above
+c_mappings <-  c_mappings %>% mutate(complex = case_when( Karyotype == '45,X' ~ 0,
+                                                          Karyotype == 'N/A' ~ 0, 
+                                                          TRUE ~ 1))
+## Make factors
+c_mappings <- c_mappings %>% mutate(BAV = as.factor(BAV), Smoking = as.factor(Smoking), complex = as.factor(complex), Pool = as.factor(Pool))
+
+
+## Add text_bav 
+c_mappings <- c_mappings %>% mutate(bav_tav = as.factor(if_else(BAV == 1, "BAV","TAV")))
+
+c_mappings %>% jg_pretty_print()
+```
+
+> Read in Imputed Matrix
+
+
+
+```{r read in methylation}
+imputed_mat <-  readRDS('meth_data/tiled_before_imputed_meth.rds')
+clean_mat <- remove_invariance(imputed_mat)
+#most_var_mat <- 
+```
+
+## Heirarchical Clustering
+
+I will use the fast cluster package as there is a known bug in the stats::hclust() function. 
+
+Use correlation distance! 
+
+```{r Correlation Function}
+dist.cor <- function(x, method = "pearson", abs=TRUE, diag=FALSE, upper=FALSE){
+  
+  xcor <- cor(t(x), method = method)
+  
+  if(abs){
+    xcor = 1-abs(xcor)
+  } else{
+    xcor = 1-xcor
+  }
+  
+  d <- xcor[lower.tri(xcor,diag=FALSE)]
+  
+  
+  attr(d, "Size") <- nrow(x)
+  attr(d, "Labels") <- dimnames(x)[[1L]]
+  attr(d, "Diag") <- diag
+  attr(d, "Upper") <- upper
+  attr(d, "method") <- method
+  attr(d, "call") <- match.call()
+  class(d) <- "dist"
+  
+  return(d)
+}
+```
+
+
+
+
+
+```{r Clustering Plots}
+#dist_mat <- dist(scale(t(clean_mat)))
+cor_dist <- dist.cor(t(clean_mat))
+hc_out <- hclust(cor_dist,method = "complete")
+plot(hc_out)
+
+```
+
+
+```{r Other Clustering Plots}
+new_hc <- hc_out
+new_hc$labels <- c_mappings$BAV
+plot(new_hc)
+```
+
+
+## PCA
+
+```{r Run PCA}
+batch_factors <- c("BAV", "Age","Smoking","complex","Pool")
+atitle <- "Preliminary Methyl-Capture Data"
+mc_pca <- assess_pca(mat = clean_mat,pd = c_mappings, batch.factors = batch_factors, title = atitle)
+mc_pca$heatmap
+```
+
+> Need to fix the color scaling. 
+
+## PC-PR2
+
+
+
+```{r PCPR2 Run}
+tit = "PC-PR2 Analysis of Known Sources of Variation"
+PC_PR2(mc_pca$pca, c_mappings, batch_factors,tit)
+```
+
+## UMAP
+
+umap(
+  X,
+  n_neighbors = 15,
+  n_components = 2,
+  metric = "euclidean",
+  n_epochs = NULL,
+  learning_rate = 1,
+  scale = FALSE,
+  init = "spectral",
+  init_sdev = NULL,
+  spread = 1,
+  min_dist = 0.01,
+  set_op_mix_ratio = 1,
+  local_connectivity = 1,
+  bandwidth = 1,
+  repulsion_strength = 1,
+  negative_sample_rate = 5,
+  a = NULL,
+  b = NULL,
+  nn_method = NULL,
+  n_trees = 50,
+  search_k = 2 * n_neighbors * n_trees,
+  approx_pow = FALSE,
+  y = NULL,
+  target_n_neighbors = n_neighbors,
+  target_metric = "euclidean",
+  target_weight = 0.5,
+  pca = NULL,
+  pca_center = TRUE,
+  pcg_rand = TRUE,
+  fast_sgd = FALSE,
+  ret_model = FALSE,
+  ret_nn = FALSE,
+  n_threads = max(1, RcppParallel::defaultNumThreads()/2),
+  n_sgd_threads = 0,
+  grain_size = 1,
+  tmpdir = tempdir(),
+  verbose = getOption("verbose", TRUE)
+)
+
+n_sgd_threads >1 RESULTS NOT REPRODUCIBLE! 
+
+
+```{r UMAP}
+## JG 8/19/20: Umap without group seeding. 
+## Checking for files:
+prev_umap <- "eda_data/umap_embeddings.rds"
+if (file.exists(prev_umap)){
+  ## THe file exists load it.
+  print("loading Previously Generated UMAP Object!")
+  imput_umap <- readRDS(prev_umap)
+}else{
+  # It doesnt exist so run it 
+  ## JG ADD SAVING IT LATER!!!!!
+  print("No Output Detected Running UMAP")
+  imput_umap <- umap(t(clean_mat),init = 'spca',n_components = 3, n_neighbors = 10, a = 2, b = 2, local_connectivity = 2, fast_sgd = TRUE)
+  
+  ## Saving
+  saveRDS(imput_umap, prev_umap)
+}
+
+## JG 8/19/20: Umap without group seeding. 
+# imput_umap <- umap(t(clean_mat),init = 'spca',n_components = 3, n_neighbors = 10, a = 2, b = 2, local_connectivity = 2, fast_sgd = TRUE)
+
+
+## JG 8/19/20: Umap WITH group seeding. 
+#imput_umap <- umap(t(clean_mat),init = 'spca', n_neighbors = 10, a = 2, b = 2, local_connectivity = 2, fast_sgd = TRUE, y = c_mappings$BAV)
+#saveRDS(imput_umap,'T_Umap_saved.RDS')
+#saveRDS(object = imput_umap, file = "data/umap_embeddings.rds")
+#imput_umap <- readRDS("data/umap_embeddings.rds")
+
+the_title <- "UMAP visualization"
+embed_plot(imput_umap, c_mappings$BAV,text = c_mappings$bav_tav, title = the_title)
+## 
+
+```
+
+
+
+```{r UMAP 3D}
+scatter3D(imput_umap[,1], imput_umap[,2], imput_umap[,3], colvar = NULL, col = c_mappings$bav_tav,
+          pch = 19, cex = 0.5)
+```
+
+
+> Make a function to explore all these options and save the params into the plot! Then make all of them and write to pdf
+
+> BAV appears to be seperate from TAV because I seeded the algorithm.
+
+## T-SNE
+
+
+> same as above!
+
+```{r Run TSNE}
+
+## Checking for files:
+prev_tsne <- "eda_data/tsne_embeddings.rds"
+if (file.exists(prev_tsne)){
+  ## THe file exists load it.
+  print("loading Previously Generated TSNE Object!")
+  tnse_out <- readRDS(prev_tsne)
+}else{
+  # It doesnt exist so run it 
+  ## JG ADD SAVING IT LATER!!!!!
+  print("No Output Detected Running TSNE")
+  tnse_out <- fftRtsne(t(clean_mat), fast_tsne_path = "/home/groups/hoolock2/u0/jg/bin/FIt-SNE/bin/fast_tsne", dims = 2, perplexity = 1, max_iter = 1000)
+  
+  ## Saving
+  saveRDS(tnse_out, prev_tsne)
+}
+# tnse_out <- fftRtsne(t(clean_mat), fast_tsne_path = "/home/groups/hoolock2/u0/jg/bin/FIt-SNE/bin/fast_tsne", dims = 2, perplexity = 1, max_iter = 1000)
+# 
+# saveRDS(tnse_out, "eda_data/tsne_embeddings.rds")
+
+```
+
+
+Visualization Here
+
+```{r TSNE Vis}
+the_title <- "Tsne visualization"
+embed_plot(tnse_out, c_mappings$BAV,text = c_mappings$bav_tav, title = the_title)
+```
+
+
+
+## SVA
+
+
+```{r SVA Params}
+variable_imputed <- remove_invariance(clean_mat)
+all_covariates <- c('bav_tav', 'Age','Smoking','complex','Pool')
+main_var <- 'bav_tav'
+biological <- c('Age')
+naive_title <- 'Value before imputation'
+```
+
+> It appears 8% of all CpGs are the same across all samples and were removed for cell type composition estimation. 
+
+> Now applying the Traditional SVA algorithm 
+
+```{r RUN SVA}
+## Estimating the Number of SVs by permutation 
+## Checking for files:
+prev_sva <- "eda_data/sva_out.rds"
+if (file.exists(prev_sva)){
+  ## THe file exists load it.
+  print("loading Previously Generated SVA Object!")
+  tile_sva <- readRDS(prev_sva)
+}else{
+  # It doesnt exist so run it 
+  ## JG ADD SAVING IT LATER!!!!!
+  print("No Output Detected Running SVA")
+  tile_sva <- sva_assessment(variable_imputed, c_mappings, all_covariates, main_var, biological, naive_title, discover = FALSE, algorithm = "Leek", sv_est_alg = 'be') #'be') #"RMT")
+  
+  ## Saving
+  saveRDS(tile_sva, prev_sva)
+}
+
+tile_sva$heatplot
+
+tile_sva$barplot
+
+SV <- tile_sva$sv
+colnames(SV) <-  paste("SV", seq(tile_sva$n.sv), sep ='')
+
+```
+
+<!-- Saving resulting surrogate Varibles -->
+
+<!-- ```{r} -->
+<!-- saveRDS(tile_sva,'data/sva_out.rds') -->
+
+
+<!-- ``` -->
+
+
+
+
+## SVA PC-PR2
+
+> NULL PCPR2
+
+```{r sva PCPR2}
+pheno <- c_mappings[batch_factors]
+
+
+tit = "PC-PR2 Analysis of Known Sources of Variation"
+PC_PR2(mc_pca$pca, pheno, batch_factors,tit)
+```
+
+
+> Adding SVs to phenotype data> 
+
+
+```{r PCPR2 SV + Bio}
+bio <- pheno[,1:2] 
+bio <- cbind(bio, SV)
+
+tit = "PC-PR2 Analysis of Biological Factors & Surrogate Variables"
+PC_PR2(mc_pca$pca, bio, colnames(bio),tit)
+```
+
+> Now Assessing everything
+
+
+
+```{r SVA ALL}
+pheno <- cbind(pheno, SV)
+
+tit = "PC-PR2 Analysis of All Sources of Variation"
+PC_PR2(mc_pca$pca,pheno , colnames(pheno),tit)
+```
+
+> Assessing Just SVA
+
+
+
+```{r PCPR2 Just SVA}
+pheno <- cbind(pheno, SV)
+col_vec <- colnames(pheno)
+sv_name <- col_vec[col_vec %>% grep("SV.",.)]
+
+tit  <-  "PC-PR2 Analysis of All Sources of Variation"
+
+PC_PR2(mc_pca$pca,pheno , sv_name,tit)
+```
+
+In the preliminary analysis Surrogate variables explain rough 37% of the data. 
+
+
+
+### Packages
+
+```{r R info}
+sessionInfo()
+```
+

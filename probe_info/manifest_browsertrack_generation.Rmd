@@ -1,0 +1,92 @@
+---
+title: "BLANK"
+author: "Jacob Gutierrez"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: hide
+    df_print: paged
+    toc: true
+    toc_float:
+      collapsed: true
+      smooth_scroll: false
+    theme: yeti
+subtitle: "Thesis Project: SA1"
+---
+
+```{r, echo = F}
+## Knitr setupchunk
+knitr::opts_chunk$set(fig.width=12, fig.height=8, echo=TRUE, warning=FALSE, message=FALSE, rows.print=20, eval = TRUE)
+```
+
+# Purpose: {.tabset .tabset-fade .tabset-pills}
+
+This script is expected to run on Hoolock2 See sessionInfo for more info.
+
+Here I will take the lifted-over manifest file and create a track. 
+
+
+# Analysis:
+
+#### Libraries
+
+
+```{r libraries}
+library(rtracklayer) ## Bed tool package
+```
+
+
+### Data read in 
+
+Read in data 
+```{r}
+hg38_gr <- import.bed("hg38-ensemble-truseq-manifest.bed")
+```
+
+## Create manifest
+
+Place annotation into UCSC format for genome browser. 
+
+```{r}
+seqlevelsStyle(hg38_gr) <- "UCSC"
+```
+
+
+Removing all non canonical chromosomes
+
+```{r}
+canonical <- paste("chr",c(seq(22),"X","Y"), sep = "")
+hg38_gr <- keepSeqlevels(hg38_gr,canonical, pruning.mode = "coarse")
+```
+
+Write out 
+
+```{r}
+export.bed(hg38_gr, "ucsc_format.bed")
+```
+
+> END OF R CODE
+
+### BASH Processing
+
+Here I will just combine the previously made bed file with the header. 
+
+```{bash}
+cat manifest_track_header.txt ucsc_format.bed > hg38-mcseq-truseq-track.bed
+
+gzip hg38-mcseq-truseq-track.bed
+
+## Clear buffer
+rm ucsc_format.bed
+```
+
+
+
+
+
+### Packages
+
+```{r}
+sessionInfo()
+```
+

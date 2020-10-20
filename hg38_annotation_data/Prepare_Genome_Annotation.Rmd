@@ -1,0 +1,153 @@
+---
+title: "BLANK"
+author: "Jacob Gutierrez"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: hide
+    df_print: paged
+    toc: true
+    toc_float:
+      collapsed: true
+      smooth_scroll: false
+    theme: yeti
+subtitle: "Thesis Project: SA1"
+---
+
+```{r knitr setup chunk, echo = F}
+## Knitr setupchunk
+knitr::opts_chunk$set(fig.width=12, fig.height=8, echo=TRUE, warning=FALSE, message=FALSE, rows.print=20, eval = TRUE)
+```
+
+# Purpose: {.tabset .tabset-fade .tabset-pills}
+
+This script is expected to run on Hoolock2 See sessionInfo for more info.
+
+Run this code before the annotation pipeline!
+
+# Preparing Annotation
+
+## 1) Get GTF and prepare bed files
+
+
+Creating a bedfile from the genome. 
+
+```{bash}
+bash make_ensembl_bed.sh
+```
+
+## 2) Promoter Regions.
+
+Promoter regions must be calculated for the entire genome. 
+
+```{r}
+source("prepare.prom.bed.R")
+```
+
+
+## 3) BioMart annotation 
+
+Detailed Annotations from the assembly is needed. 
+
+```{r}
+library(biomaRt)
+library(tidyverse)
+library(rtracklayer)
+```
+
+
+```{r}
+
+#prev_tb <- "ensembl_biomart_annotations.tsv"
+query_xml <- "biomart_query.xml"
+#outfile <- "ensembl_biomart_annotations.tsv"
+## Changed for testing
+outfile <- "new_ensembl_biomart_annotations.tsv"
+
+df_names <- c("Gene stable ID",	"Transcript stable ID",	"Source of gene name",	"Gene type",	"Gene Name",	"Description", "Ensembl Family Description")
+
+if (file.exists(outfile)){
+  print(sprintf("Biomart data Previously downloaded!"))
+    
+} else{ ## MAKE IT!
+  print(sprintf("Now Querying For Data %s", outfile))
+  query_xml <- readChar(query_xml,file.info(query_xml)$size )
+  response <- biomaRt:::.submitQueryXML(host = "http://www.ensembl.org/biomart/martservice?",query = query_xml)
+  response_df <- read_delim(response, delim = '\t', col_names =df_names)
+  
+  ## Write out data
+  write_tsv(response_df,outfile)
+  
+}
+
+
+
+
+```
+
+### Transcript to Gene File
+
+```{r t2g from annotation, eval = F}
+## Check to see if there is a t2g file
+outfile <- "ensembl_biomart_t2g.tsv"
+
+
+if (file.exists(outfile)){
+  print(sprintf("Biomart data Previously downloaded!"))
+    
+} else{ ## MAKE IT!
+  print(sprintf("Now Querying For Data %s", outfile))
+  t2g <- response_df %>% distinct(`Gene stable ID`,`Transcript stable ID`)
+  dim(response_df)
+  dim(t2g)
+  
+  ## Write out data
+  write_tsv(t2g,outfile)
+  
+}
+
+
+
+```
+
+```{r t2g from gtf, eval = F}
+## Check to see if there is a t2g file
+outfile <- "ensembl_gtf_t2g.tsv"
+
+
+if (file.exists(outfile)){
+  print(sprintf(" data Previously downloaded!"))
+    
+} else{ ## MAKE IT!
+  print(sprintf("Now Making t2g from a gtf genome file %s", outfile))
+  gtf <- import("Homo_sapiens.GRCh38.98.gtf")
+  t2g <- data.frame(gene_id = gtf$gene_id,transcript_id = gtf$transcript_id)
+  t2g <- t2g %>% filter(!is.na(transcript_id)) %>% distinct()
+  dim(t2g)
+  t2g %>% distinct(gene_id) %>% nrow()
+  t2g %>% distinct(transcript_id) %>% nrow()
+  write.table(t2g,outfile, sep ='\t', row.names = F)
+  ## Write out data
+  
+}
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+### Packages
+
+```{r R info}
+sessionInfo()
+```
+

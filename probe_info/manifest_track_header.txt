@@ -1,0 +1,2 @@
+track name="Methyl Capture Targets" description="Genome Browser Track of targeted Methyl Capture Regions" color=0,0,225
+#chrom chromStart chromEnd
