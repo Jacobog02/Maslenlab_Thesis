@@ -1,12 +1,13 @@
 #!/bin/bash
 
 ##### PURPOSE #####
-## Jacob Gutierrez guteirja@ohsu.edu
+## Jacob Gutierrez gutierja@ohsu.edu
+## JG 11/17/20: Now Adding Output file check 
 ## Reused 3/29/20
 ## The purpose of this file is to intitialize the probe validation program. PREVIOUSLY
 # This script is now the dependecy file for the preprocessing of the raw methyl-capture sequencing data. 
 # Analysis Pipeline:
-## 0) Create Mappign File from excel: Python pandas
+## 0) Create Mapping File from excel: Python pandas
 ## 1) raw sequencing : Fastqc
 ## 2) read triming : Trimegalore (cutadapt + fastqc)
 ## 3) Alignment : Bismark (bowtie2)
@@ -85,9 +86,19 @@ export bispath=/home/groups/hoolock2/u0/jg/thesis/env/methylseq/bin/ #bismark
 export hg38=/home/groups/hoolock2/u0/jg/thesis/human_genome
 
 
-#4) Sort and Index.
+#4) Sort and Index 
+## JG 11/17/20: AND BEDTOOLS!!! I already have it in the environment. 
 #export exa_sam=/opt/installed/samtools-1.6/bin/samtools
 export exa_sam=/home/groups/hoolock2/u0/jg/thesis/env/methylseq/bin/samtools
+export methyl_bed=/home/groups/hoolock2/u0/jg/thesis/env/methylseq/bin/bedtools
+
+## Adding Bigwig Conversion 
+## JG 10/30/20 
+## Please run install_bedGraphToBigWig.sh in scripts dir. 
+export bedGraphToBigWig=/home/groups/hoolock2/u0/jg/thesis/scripts/mcseq_alignment/bedGraphToBigWig
+#export fetchChromSizes=/home/groups/hoolock2/u0/jg/thesis/scripts/mcseq_alignment/fetchChromSizes
+#export ChromSizes=/home/groups/hoolock2/u0/jg/thesis/annotation_info/hg38.chrom.size
+export ChromSizes=/home/groups/hoolock2/u0/jg/thesis/sa1/ECP15/ECP15_genome.txt
 
 ##### Functions ####
 
@@ -121,8 +132,6 @@ format_sbatch() {
   echo 'sbatch --account '$slurm_acct' --job-name='$1' --output=./slurmout/'${expname}'.'$1'.%A_%a.out --error=./slurmerr/'${expname}'.'$1'.%A_%a.err'
   
 }
-
-#format_sbatch rawrxd
 
 
 ####### END OF FUNCTIONS #####

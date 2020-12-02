@@ -26,6 +26,6 @@ echo "SLURM_JOBID: " $SLURM_JOBID
 # Do something to each input file:
 #$exafastqc -t 2 -o $wrkdir/qc $sourcedir/$INFILE*.fastq.gz 
 ## Check expected output: If it doesnt exist execute otherwise skip. 
-$exa_mutliqc $wrkdir/ -n ${expname}_report_multiqc
+$exa_mutliqc -d $wrkdir/ -n ${expname}_report_multiqc
 
 

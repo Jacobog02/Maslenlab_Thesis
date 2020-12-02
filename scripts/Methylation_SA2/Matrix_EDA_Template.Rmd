@@ -1,0 +1,416 @@
+---
+title: "`r params$mat_name` Matrix EDA"
+author: "Jacob Gutierrez"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: hide
+    df_print: paged
+    toc: true
+    toc_depth: 3
+    toc_float:
+      collapsed: true
+      smooth_scroll: false
+    theme: yeti
+subtitle: "Thesis Project: Cell Deconvolution"
+params: 
+  mat_name: NA
+  mat: NA
+  all_pheno: NA
+  batch_factors: NA
+  mds_npos: 1000
+  sva_main: NA
+  sva_bio: NA
+  prev_out: NA
+  to_run: NA
+---
+
+```{r knitr setup chunk, echo = F}
+## Knitr setupchunk
+knitr::opts_chunk$set(fig.width=12, fig.height=8, echo=TRUE, warning=FALSE, message=FALSE, rows.print=20, eval = TRUE)
+```
+
+# Purpose: {.tabset .tabset-fade .tabset-pills}
+
+This script is expected to run on Hoolock2 See sessionInfo for more info.
+
+#### Libraries
+
+
+```{r libraries}
+library(rtracklayer) ## grange functions
+library(tidyverse) ## The good data.frame stuff
+source('/home/groups/hoolock2/u0/jg/thesis/scripts/Methylation_SA2/EDA_analysis_tools.R') ## SVA and PCA code
+library(ggdendro)
+library(reshape2)
+library(ggpubr)
+#library(RefFreeEWAS) ## Deconvolution Algorithm
+```
+
+# EDA:
+
+
+#### Data Unpacking
+
+Please note this template accepts data that has been processed to remove any NA values and to have invariant rows removed. like below
+
+```{r raw meth cleaning, eval = F}
+## Remove NA rows
+clean_mat <- na.omit(raw)
+sprintf("Starting with %i observations in raw we are left with only %i complete observations", nrow(raw), nrow(clean_mat))
+clean_mat <- remove_invariance(clean_mat) ## Send clean_mat as a parameter here. 
+
+```
+
+```{r Parameter Unpacking}
+unpack_params <- params ## JG 11/6/20 Added to debug this function
+
+clean_mat<- unpack_params$mat ## Matrix to analyze
+c_mappings <- unpack_params$all_pheno ## All feature/phenotype information available
+batch_factors <- unpack_params$batch_factors ## List of names to inspect from ^^^
+pheno <- c_mappings[batch_factors] ## Complete DF of features to use for some functions
+to_run <- unpack_params$to_run ## Vector of names for analysis
+
+#eda_return <-list() ## Now defunct
+
+## JG 10/20/20: I need to upgrade the save function to accept an object location and read it in. If it doesnt exist construct a new list and continue
+## The object will be a named list so I can say prev_results_obj["PCA"] and the PCA object will be returned.
+## If empty then run the PCA and save the object to the PCA slot.
+
+## Check if the file exists, if so read it in. 
+prev_out <- unpack_params$prev_out
+if (file.exists(prev_out)){
+  sprintf("Reading In Previous Output") #%>% noquote()
+  out_list <- readRDS(prev_out) ## Read in List
+} else if (is.character(prev_out)) { ## check to see if it is an character 
+  sprintf("Creating New Output to Save") #%>% noquote()
+  #file.create(prev_out) ## Touch the file (Hopefully this wont throw and Error this needs to be updated)
+  out_list <- list() ## Create List
+  
+} 
+
+## Adding flag to make sure we only update the output list if FLAGGED!
+write_flag <- FALSE
+
+
+## Basic out_list function
+## JG 10/20/20: Adding analysis out check
+#an_analysis <- "PCA"
+#if (!is.na(out_list[an_analysis])){
+
+  #atitle <- an_analysis
+  ## DO AN ANALYSIS
+  #mc_pca <- assess_pca(mat = clean_mat,pd = c_mappings, batch_factors = batch_factors, title = atitle) 
+
+  #out_list[an_analysis] <- mc_pca 
+  
+#} else{ ## It already exists and now you print it
+  #print("Prevous Output detected")
+  #mc_pca <- out_list[an_analysis]
+  #print(mc_pca)
+#}
+
+## JG 10/20/20: Adding Eval function for analysis parameters
+analysis_eval <- function(a_str){
+  
+  return(ifelse(a_str %in% to_run,TRUE,FALSE))
+  
+}
+
+
+```
+
+```{r hidden PhenoCor,esults='asis', echo = F}
+phenocor_eval <- analysis_eval("PhenoCor")
+```
+
+
+```{r Phenotype Matrix Correlation , results='asis', tidy=FALSE, eval = phenocor_eval, echo = phenocor_eval}
+pheno_cor_catch <- df_corrplot(pheno)
+```
+
+
+```{r hidden HC,esults='asis', echo = F}
+an_analysis <- "HC" ## JG 10/21/20: I need ot declare this once what am I doing... 
+
+hc_eval <- analysis_eval(an_analysis)
+```
+
+
+```{r Hierarchical Clustering , results='asis', tidy=FALSE, eval = hc_eval, echo = hc_eval}
+## Print Header Name
+cat(sprintf("## %s\n", "Hierarchical Clustering"))
+## HEre is the HCLUST call
+
+#assess_hcclust(mat = clean_mat,pd= c_mappings,batch_factors=batch_factors,dist.method = "euclidean", hclust.method = "complete")
+
+if (is.null(out_list[[an_analysis]])){
+  print("Now Peforming Hierarchical Clustering")
+  ## Do analysis
+  hc_out <- assess_hcclust(mat = clean_mat,pd= c_mappings,batch_factors=batch_factors,dist.method = "euclidean", hclust.method = "complete")
+
+  ## Append results to output
+  out_list[[an_analysis]] <- hc_out 
+  write_flag <- TRUE
+  
+} else{ ## It already exists and now you print it
+  print("Prevous Output detected")
+  hc_out <- out_list[[an_analysis]]
+}
+
+## Display
+hc_out$plothc(hc_out$hc, pd=c_mappings, batch_factors)
+
+
+```
+
+
+```{r hidden MDS,results='asis', echo = F}
+an_analysis <- "MDS" ## JG 10/21/20: I need ot declare this once what am I doing... 
+mds_eval <- analysis_eval(an_analysis)
+```
+
+
+```{r Multi Dimensional Scaling , results='asis', tidy=FALSE, eval = mds_eval, echo = mds_eval}
+## Print Header Name
+cat(sprintf("## %s\n", "Multi Dimensional Scaling"))
+
+if (is.null(out_list[[an_analysis]])){
+  print("Now Peforming MDS")
+  ## Do analysis
+  n_pos <- unpack_params$mds_npos ## unpack only if run
+  mds_out <- assess_MDS(clean_mat, numPositions = n_pos, dist.method = "euclidean")
+  ## Append results to output
+  out_list[[an_analysis]] <- mds_out 
+  write_flag <- TRUE
+  
+} else{ ## It already exists and now you print it
+  print("Prevous Output detected")
+  mds_out <- out_list[[an_analysis]]
+}
+
+## Display output 
+mds_out$jg_autoplot(mds_out$mds, label = TRUE, shape = FALSE)
+
+```
+
+
+```{r hidden PCA, results='asis', echo = F}
+an_analysis <- "PCA" ## JG 10/21/20: I need to declare this only once 
+pca_eval <- analysis_eval(an_analysis)
+```
+
+
+<!-- # ```{r PCA, eval = T} -->
+```{r PCA, results='asis', tidy=FALSE, eval = pca_eval, echo = pca_eval}
+## Print Header Name
+cat(sprintf("## %s\n", "PCA"))
+
+## JG 10/20/20: Adding analysis out check
+#an_analysis <- "PCA"
+if (is.null(out_list[[an_analysis]])){
+  print("Now Peforming PCA")
+  #batch_factors <- c("BAV", "Age","Smoking","complex","Pool")
+  atitle <- an_analysis
+  mc_pca <- assess_pca(mat = clean_mat,pd = pheno, title = atitle)
+  #mc_pca$heatmap
+  
+  ## JG 10/15/20: I am checking to see if I can export this object to the render call.
+  ## Turns out that when rendered in Rstudio code chunk it returns the objects made so I will consolidate them into 1 out list. 
+  #LOOKFORME <<- mc_pca
+  #eda_return$mc_pca <- mc_pca
+  out_list[[an_analysis]] <- mc_pca 
+  write_flag <- TRUE
+  
+} else{ ## It already exists and now you print it
+  print("Prevous Output detected")
+  mc_pca <- out_list[[an_analysis]]
+}
+
+## Display output 
+## To plot 
+mc_pca$jg_plot_pca(mc_pca$pca) ## This can be done with any  PCA. 
+mc_pca$cor_heatmap(plot_df = mc_pca$plot_df,X = "PC_label", Y = "Batch", fill_col = "cor", lab_col = "stars", title = "")
+mc_pca$jg_autoplot(mc_pca$pca, label = TRUE, shape = F)
+
+#mc_pca$txtplot
+```
+
+
+<!-- ## PC-PR2  -->
+
+
+<!-- # ```{r PCPR2 Batch_Factors, eval = T} -->
+```{r PCPR2 Batch_Factors, results='asis', tidy=FALSE, eval = pca_eval, echo = pca_eval}
+## Print Header Name
+cat(sprintf("## %s\n", "PC-PR2 Batch Factors"))
+
+tit = "PC-PR2 Analysis of Known Sources of Variation"
+pc2_out <- PC_PR2(mc_pca$pca, c_mappings, batch_factors,tit)
+#eda_return$pc2_out <- pc2_out ## Adding out list
+pc2_out$pcpr2_heatmap(pc2_out$plotting)
+```
+
+
+```{r hidden SVA, results='asis', echo = F}
+sva_eval <- analysis_eval("SVA")
+```
+
+
+<!-- # ```{r SVA Params, eval = F} -->
+```{r SVA Params, results='asis', tidy=FALSE, eval = sva_eval, echo = sva_eval}
+## Print Header Name
+cat(sprintf("## %s\n", "SVA"))
+
+#variable_imputed <- remove_invariance(clean_mat)
+#all_covariates <- c('bav_tav', 'Age','Smoking','complex','Pool')
+#main_var <- 'bav_tav'
+#biological <- c('Age')
+main_var <- unpack_params$sva_main
+
+biological <- unpack_params$sva_bio
+#naive_title <- 'Value before imputation'
+naive_title <- unpack_params$mat_name
+
+bio_cols <- c(main_var,biological)
+
+```
+
+
+
+```{r OLD SVA, eval = F, echo = F}
+## Estimating the Number of SVs by permutation 
+## Checking for files:
+#prev_sva <- "eda_data/sva_out.rds"
+prev_sva <- params$prev_sva
+
+if (file.exists(prev_sva)){
+  ## THe file exists load it.
+  print("loading Previously Generated SVA Object!")
+  tile_sva <- readRDS(prev_sva)
+}else{
+  # It doesnt exist so run it 
+  ## JG ADD SAVING IT LATER!!!!!
+  print("No Output Detected Running SVA")
+  tile_sva <- sva_assessment(mat = clean_mat, pd = c_mappings, batch_factors, main_factor = main_var, bio_covariates = biological, naive_title, discover = FALSE, algorithm = "Leek", sv_est_alg = 'be') #'be') #"RMT")
+  
+  ## Saving if the variable is a valid path
+  if(is.character(prev_sva)) saveRDS(tile_sva, prev_sva)
+}
+
+tile_sva$heatplot
+
+tile_sva$barplot
+
+SV <- tile_sva$sv
+colnames(SV) <-  paste("SV", seq(tile_sva$n.sv), sep ='')
+
+```
+
+
+```{r RUN SVA, results='asis', tidy=FALSE, eval = sva_eval, echo = sva_eval}
+## Estimating the Number of SVs by permutation 
+## JG 10/20/20: Adding analysis out check
+an_analysis <- "SVA"
+if (is.null(out_list[[an_analysis]])){
+  ## It doesnt exist so run it 
+  print("No Output Detected Running SVA")
+  tile_sva <- sva_assessment(mat = clean_mat, pd = c_mappings, batch_factors = batch_factors, 
+                             main_factor = main_var, bio_covariates = biological, title = naive_title, 
+                             discover = FALSE, algorithm = "Leek", sv_est_alg = 'be') #"RMT")
+  ## Add output to list
+  out_list[[an_analysis]] <- tile_sva 
+  
+} else{ ## It already exists and now you print it
+  print("Previously Generated SVA Output Detected")
+  tile_sva <- out_list[[an_analysis]]
+  print(tile_sva)
+}
+
+tile_sva$heatplot
+
+tile_sva$barplot
+
+SV <- tile_sva$sv
+colnames(SV) <-  paste("SV", seq(tile_sva$n.sv), sep ='')
+
+```
+
+
+
+
+```{r PCPR2 Just SVA, results='asis', tidy=FALSE ,eval = sva_eval, echo = sva_eval}
+## Print Header Name
+cat(sprintf("### %s\n", "PC-PR2: SVA"))
+## Adding on SV
+pheno <- cbind(pheno, SV)
+#col_vec <- colnames(pheno)
+#sv_name <- col_vec[col_vec %>% grep("SV.",.)]
+
+
+tit  <-  "PC-PR2 Analysis of All Sources of Variation"
+
+catch <- PC_PR2(mc_pca$pca,pheno , colnames(SV),tit)
+```
+
+
+<!-- ### Bioloigcal + SV.  -->
+
+<!-- # ```{r PCPR2 SV + Bio, eval = T} -->
+```{r PCPR2 SV + Bio, results='asis', tidy=FALSE, eval = sva_eval, echo = sva_eval}
+## Print Header Name
+cat(sprintf("### %s\n", "Bioloigcal + SV"))
+
+bio <- pheno[bio_cols] 
+bio <- cbind(bio, SV)
+
+tit = "PC-PR2 Analysis of Biological Factors & Surrogate Variables"
+catch <- PC_PR2(mc_pca$pca, bio, colnames(bio),tit)
+```
+
+
+
+<!-- ### All Known Factors -->
+
+
+<!-- ```{r SVA ALL, eval = F} -->
+
+<!-- tit = "PC-PR2 Analysis of All Sources of Variation" -->
+<!-- catch <- PC_PR2(mc_pca$pca,pheno , colnames(pheno),tit) -->
+<!-- ``` -->
+
+
+```{r hidden reffreeEWAS, results='asis', echo = F}
+reffree_eval <- analysis_eval("REFfree")
+```
+
+
+<!-- # ```{r SVA Params, eval = F} -->
+```{r REFfreeEWAS prep, results='asis', tidy=FALSE, eval = reffree_eval, echo = reffree_eval}
+
+```
+
+
+
+## Saving Output List
+
+
+```{r write output obj}
+## Check to see if we need to update the output! (Allows me to sequentially assemble output)
+if (write_flag){
+  sprintf("Output has been updated now writting")
+  ## Saving if the output list if the path is valid
+  if(is.character(prev_out)) saveRDS(out_list, prev_out)
+} else{
+  sprintf("No Change to Output List")
+}## End of write flag
+```
+
+
+
+### Packages
+
+```{r R info}
+sessionInfo()
+```
+

@@ -29,12 +29,16 @@ echo "SLURM_ARRAY_JOB_ID: " $SLURM_ARRAY_JOB_ID
 ARGS=`head -$SLURM_ARRAY_TASK_ID $args_file | tail -1`
 
 # set variables based on the output of the line ARGS
-IFS=: read ORIGBAM  INFILE<<< $ARGS
+#IFS=: read ORIGBAM  INFILE<<< $ARGS
 
+## JG 10/29/20: Adding Single/Paired End Sequencing Formatting. 
+# set variables based on the output of the line ARGS
+IFS=: read INFILE INFILE2 SEQ <<< $ARGS
 
-if [ ! -f $wrkdir/cov.$INFILE.bed ]; then
+## JG 10/29/20: modified script to take in the user supplied sample name. 
+if [ ! -f $wrkdir/cov.$INFILE2.bed ]; then
     bedtools coverage -sorted \
     -g $wrkdir/${expname}_genome.txt \
     -a $wrkdir/srt-${probe_name} \
-    -b $sourcedir/reads/srt.$INFILE.bam > $wrkdir/cov.$INFILE.bed
+    -b $sourcedir/reads/srt.$INFILE2.bam > $wrkdir/cov.$INFILE2.bed
 fi

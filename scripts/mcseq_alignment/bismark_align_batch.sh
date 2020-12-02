@@ -30,6 +30,8 @@ echo "SLURM_ARRAY_JOB_ID: " $SLURM_ARRAY_JOB_ID
 # set path to arguments file
 #args_file=/home/groups/hoolock/u1/jg/replicate/align/al_arg
 
+## JG 10/22/10: Adding Ambiguous Reads AND Alignment output. This might be integrated for SA1.
+## I will use the random sample of reads to see if there is enrichment for targeted regions etc. 
 
 ## JG 10/11/20: Adding Single/Paired End Sequencing Formatting. 
 
@@ -65,6 +67,7 @@ if [ ! -f $wrkdir/align/$catch  ]; then
     echo $R1
     echo $R2
     
+    ## 10/22/20: Added ambiguous call. Consider parameterizing to allow multiple kinds of behavior. 
     $bispath/bismark \
     -p 8 \
     $hg38 \
@@ -72,7 +75,8 @@ if [ ! -f $wrkdir/align/$catch  ]; then
     -1 $wrkdir/trim/$R1 \
     -2 $wrkdir/trim/$R2 \
     -o $wrkdir/align \
-    --basename ${INFILE2} #\
+    --basename ${INFILE2} \
+    --ambig_bam --ambiguous 
     #--bam
   ## Else check Single End  
   elif [ $SEQ == "SE" ]; then 
@@ -93,7 +97,8 @@ if [ ! -f $wrkdir/align/$catch  ]; then
     --temp_dir $wrkdir/align \
     -o $wrkdir/align \
     --basename ${INFILE2} \
-    $wrkdir/trim/$R1
+    $wrkdir/trim/$R1 \
+    --ambig_bam --ambiguous 
   
   else 
       echo ${INFILE} "Does not have proper Seq_Type only PE or SE accepted."

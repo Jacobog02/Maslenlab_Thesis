@@ -25,6 +25,7 @@ echo "SLURM_ARRAY_JOB_ID: " $SLURM_ARRAY_JOB_ID
 
 # set variable "ARGS" to be the output of the correct line from args_file (matches SLURM_ARRAY_TASK_ID)
 ARGS=`head -$SLURM_ARRAY_TASK_ID $args_file | tail -1`
+
 ## JG 10/11/20: Adding Single/Paired End Sequencing Formatting. 
 # set variables based on the output of the line ARGS
 #IFS=: read INFILE INFILE2 <<< $ARGS
@@ -35,12 +36,14 @@ IFS=: read INFILE INFILE2 SEQ <<< $ARGS
 ## Taken from bismark_post_align_batch.sh
 if [ $SEQ == "SE" ]; then
   
-  suffix=".bam"
+  #suffix=".bam"
+  suffix=""
   #param="-s"
   
 elif [ $SEQ == "PE" ]; then 
   
-  suffix="_pe.bam"
+  #suffix="_pe.bam"
+  suffix="_pe"
   #param="-p"
   
 else
@@ -49,6 +52,8 @@ else
    exit 0 ## leave
 fi
 
+## JG 10/24/20: Adding Ambiguous Data Moving and Cleaning. SEE BOTTOM
+
 #	TASKS:
 # Do something to each input file:
 catch=`ls $wrkdir/reads | grep ".bam$" | grep "^srt.${INFILE2}[_|\.]"`
@@ -56,13 +61,39 @@ catch=`ls $wrkdir/reads | grep ".bam$" | grep "^srt.${INFILE2}[_|\.]"`
 
 if [ ! -f $wrkdir/reads/$catch ]; then 
 
-    echo "Sorting and Indexing" ${INFILE2}
+    echo "Sorting and Indexing Aligned" ${INFILE2}
 
-    $exa_sam sort -o $wrkdir/reads/srt.${INFILE2}.bam -@ 12 -m 8G $wrkdir/align/${INFILE2}${suffix} #_pe.bam
+    $exa_sam sort -o $wrkdir/reads/srt.${INFILE2}.bam -@ 12 -m 8G $wrkdir/align/${INFILE2}${suffix}.bam #_pe.bam
 
     $exa_sam index -@ 8 $wrkdir/reads/srt.${INFILE2}.bam
     
     else
-    echo "Previous output detected now skipping"
+    echo "Previous Algined output detected now skipping"
+fi
+
+
+## JG 10/24/20: Adding Ambiguous Data Moving and Cleaning. 
+## This section will check to see if the data is in the final location. If not move it (alignments AND input reads) to the right place and index. 
+## JG 11/17/20: My desired output file is a bed version of the ambig.bam files. 
+catch=`ls $wrkdir/ambig | grep ".ambig.bed$" | grep "^srt.${INFILE2}[_|\.]"`
+
+
+if [ ! -f $wrkdir/ambig/$catch ]; then 
+
+    echo "Sorting and Indexing Ambiguous Alignments and moving reads. " ${INFILE2}
+    
+    ## Copy the ambiguous reads to the ambig directory. 
+    cp $wrkdir/align/${INFILE2}*ambiguous_reads*  $wrkdir/ambig/
+
+    ## Sort and Index the Ambiguous Reads. 
+    $exa_sam sort -o $wrkdir/ambig/srt.${INFILE2}.ambig.bam -@ 12 -m 8G $wrkdir/align/${INFILE2}${suffix}.ambig.bam #_pe.bam
+
+    $exa_sam index -@ 8 $wrkdir/ambig/srt.${INFILE2}.ambig.bam
+    
+    ## JG 11/17/20: bamtobed conversion
+    $methyl_bed bamtobed -i $wrkdir/ambig/srt.${INFILE2}.ambig.bam > $wrkdir/ambig/${INFILE2}.ambig.bed
+    
+    else
+    echo "Previous Ambiguous output detected now skipping"
 fi
 

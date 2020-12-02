@@ -41,8 +41,11 @@ IFS=: read INFILE INFILE2 SEQ <<< $ARGS
 
 ######## CHANGED 7/10/20 ######## 
 ## Check for trimmed fastqc report! This is done in the fastqc check as well. 
-catch=`ls $wrkdir/trim | grep "_fastqc.html$" | grep "^${INFILE}[_|\.]"`
+catch=`ls $wrkdir/trim | grep "_fastqc.html$" | grep "^${INFILE}[_|\.]" |  tr ' ' '\n'`
 
+## JG 10/23/20: modify script to only check one input... Consider checking all results. 
+## See here: https://stackoverflow.com/questions/10586153/split-string-into-an-array-in-bash
+catch=($(echo "$catch"))
 
 
 if [ ! -f $wrkdir/trim/${catch} ]; then 

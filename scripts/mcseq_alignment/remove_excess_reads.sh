@@ -72,6 +72,7 @@ if [ `ls -1 ${wrkdir}align/*.bam 2>/dev/null | wc -l ` -gt 0 ];
 then
     echo "Files Detected Now Removing Aligned"
     rm $wrkdir/align/*.bam
+    rm $wrkdir/align/*.fq.gz
 
 else
 echo No Alig Bam Files Detected: Skipping
